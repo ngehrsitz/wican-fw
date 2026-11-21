@@ -5,6 +5,10 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 B="$ROOT/build/olimex-esp32-evb-revk"
 cd "$ROOT"
 
+# The checkout may be owned by the runner's UID rather than the container's.
+# This is scoped to the mounted repository and the disposable container.
+git config --global --add safe.directory "$ROOT"
+
 # GitHub job containers do not necessarily run the image's entrypoint.
 source /opt/esp/idf/export.sh
 idf.py --version

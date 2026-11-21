@@ -47,7 +47,7 @@ static void uart_rx_task(void *arg)
     {
 //    	xQueueReceive(*xuart_tx_queue, ( void * ) &tx_buffer, portMAX_DELAY);
 //    	uart_write_bytes(UART_NUM_0, tx_buffer.ucElement, tx_buffer.usLen);
-        if(xQueueReceive(uart0_queue, (void * )&event, (portTickType)portMAX_DELAY))
+        if(xQueueReceive(uart0_queue, (void * )&event, portMAX_DELAY))
         {
             dev_status_wait_for_bits(DEV_AWAKE_BIT, portMAX_DELAY);
             bzero(rx_buffer.ucElement, sizeof(rx_buffer.ucElement));
@@ -124,5 +124,4 @@ void wc_uart_init(QueueHandle_t *xTXp_Queue, QueueHandle_t *xRXp_Queue, uint8_t 
     xTaskCreate(uart_tx_task, "uart_tx_task", 1024*2, (void*)AF_INET, 5, NULL);
     xTaskCreate(uart_rx_task, "uart_rx_task", 1024*2, (void*)AF_INET, 5, NULL);
 }
-
 
