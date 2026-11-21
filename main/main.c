@@ -41,6 +41,7 @@
 #include "can.h"
 #include "ble.h"
 #include "wifi_network.h"
+#include "network.h"
 #include "esp_mac.h"
 #include "esp_ota_ops.h"
 #include "nvs.h"
@@ -61,7 +62,7 @@
 
 #define TAG 		__func__
 
-#define GPIO_OUTPUT_PIN_SEL  ((1ULL<<CONNECTED_LED_GPIO_NUM) | (1ULL<<ACTIVE_LED_GPIO_NUM) | (1ULL<<PWR_LED_GPIO_NUM))
+#define GPIO_OUTPUT_PIN_SEL  (hw_gpio_output_mask(CONNECTED_LED_GPIO_NUM) | hw_gpio_output_mask(ACTIVE_LED_GPIO_NUM) | hw_gpio_output_mask(PWR_LED_GPIO_NUM))
 #define BLE_EN_PIN_SEL		(1ULL<<BLE_EN_PIN_NUM)
 #define BLE_Enabled()		(!gpio_get_level(BLE_EN_PIN_NUM))
 
@@ -81,7 +82,7 @@ static uint8_t ble_uid[33];
 static char hardware_version[16];
 static char firmware_version[10];
 // Wrapper so we can provide a function pointer for network readiness
-static bool dbg_net_ready(void) { return wifi_network_is_connected(); }
+static bool dbg_net_ready(void) { return network_is_connected(); }
 
 static void log_can_to_mqtt(twai_message_t *frame, uint8_t type)
 {
@@ -114,7 +115,7 @@ static void process_led(bool state)
 
 	if(!can_is_enabled())
 	{
-		gpio_set_level(ACTIVE_LED_GPIO_NUM, 1);
+		hw_gpio_set_level(ACTIVE_LED_GPIO_NUM, 1);
 		current_state = 0;
 		last_change = esp_timer_get_time();
 	}
@@ -134,11 +135,11 @@ static void process_led(bool state)
 	}
 	if(state == 1)
 	{
-		gpio_set_level(ACTIVE_LED_GPIO_NUM, 0);
+		hw_gpio_set_level(ACTIVE_LED_GPIO_NUM, 0);
 	}
 	else
 	{
-		gpio_set_level(ACTIVE_LED_GPIO_NUM, 1);
+		hw_gpio_set_level(ACTIVE_LED_GPIO_NUM, 1);
 	}
 }
 
@@ -367,6 +368,17 @@ static void can_rx_task(void *pvParameters)
 
 void app_main(void)
 {
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+	project_hardware_rev = OLIMEX_ESP32_EVB_REVK;
+	// Relays are unused. Set their output latches low before enabling outputs.
+	hw_gpio_set_level(RELAY1_GPIO_NUM, 0);
+	hw_gpio_set_level(RELAY2_GPIO_NUM, 0);
+	gpio_config_t relay_config = {
+		.pin_bit_mask = (1ULL << RELAY1_GPIO_NUM) | (1ULL << RELAY2_GPIO_NUM),
+		.mode = GPIO_MODE_OUTPUT,
+	};
+	ESP_ERROR_CHECK(gpio_config(&relay_config));
+#endif
 	dev_status_init();
 	dev_status_set_bits(DEV_AWAKE_BIT);
     ESP_ERROR_CHECK(nvs_flash_init());
@@ -385,14 +397,20 @@ void app_main(void)
     //disable pull-up mode
     io_conf.pull_up_en = 0;
     //configure GPIO with the given settings
-    gpio_config(&io_conf);
+    if(io_conf.pin_bit_mask)
+    {
+        gpio_config(&io_conf);
+    }
 
-	gpio_set_level(CONNECTED_LED_GPIO_NUM, 1);
-	gpio_set_level(ACTIVE_LED_GPIO_NUM, 1);
+	hw_gpio_set_level(CONNECTED_LED_GPIO_NUM, 1);
+	hw_gpio_set_level(ACTIVE_LED_GPIO_NUM, 1);
 
-    gpio_reset_pin(CAN_STDBY_GPIO_NUM);
-    gpio_set_direction(CAN_STDBY_GPIO_NUM, GPIO_MODE_OUTPUT);
-    gpio_set_level(CAN_STDBY_GPIO_NUM, 1);
+    if(hw_gpio_output_mask(CAN_STDBY_GPIO_NUM))
+    {
+        gpio_reset_pin(CAN_STDBY_GPIO_NUM);
+        gpio_set_direction(CAN_STDBY_GPIO_NUM, GPIO_MODE_OUTPUT);
+        hw_gpio_set_level(CAN_STDBY_GPIO_NUM, 1);
+    }
 
     xMsg_Rx_Queue = xQueueCreate(16, sizeof( xdev_buffer) );
     xMsg_Tx_Queue = xQueueCreate(16, sizeof( xdev_buffer) );
@@ -401,7 +419,11 @@ void app_main(void)
 	esp_ota_mark_app_valid_cancel_rollback();
 //    xmsg_obd_rx_queue = xQueueCreate(100, sizeof( twai_message_t) );
 
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+    ESP_ERROR_CHECK(esp_read_mac(derived_mac_addr, ESP_MAC_ETH));
+#else
     ESP_ERROR_CHECK(esp_read_mac(derived_mac_addr, ESP_MAC_WIFI_SOFTAP));
+#endif
     sprintf((char *)ble_uid,"WiC_%02x%02x%02x%02x%02x%02x",
             derived_mac_addr[0], derived_mac_addr[1], derived_mac_addr[2],
             derived_mac_addr[3], derived_mac_addr[4], derived_mac_addr[5]);
@@ -413,6 +435,12 @@ void app_main(void)
 	slcan_init(&send_to_host);
 
 	int8_t can_datarate = config_server_get_can_rate();
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+	if(can_datarate == -1 || can_datarate == CAN_AUTO)
+	{
+		can_datarate = CAN_125K;
+	}
+#endif
 	(can_datarate != -1) ? can_init(can_datarate):can_init(CAN_500K);
 
 	if(can_datarate != -1)
@@ -501,7 +529,7 @@ void app_main(void)
 //	}
 
 
-	wifi_network_init(NULL, NULL);
+	network_init();
 	int32_t port = config_server_get_port();
 
 	if(port == -1)
@@ -549,9 +577,12 @@ void app_main(void)
 		{
 			ESP_LOGI(TAG, "Failed to extract firmware version");
 		}
-		sprintf(hardware_version, "WiCAN-%s", HARDWARE_VERSION);
+		snprintf(hardware_version, sizeof(hardware_version), "WiCAN-%s", HARDWARE_VERSION);
 		ESP_LOGI(TAG, "Hardware version: %s", hardware_version);
 
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+        project_hardware_rev = OLIMEX_ESP32_EVB_REVK;
+#else
         if(strstr(running_app_info.project_name, "usb") != 0)
         {
         	project_hardware_rev = WICAN_USB_V100;
@@ -572,14 +603,16 @@ void app_main(void)
             }
             else
             {
-            	project_hardware_rev = WICAN_V300;
+             project_hardware_rev = WICAN_V300;
             }
         }
+#endif
     }
 	wc_mdns_init((char*)uid, hardware_version, firmware_version);
     xTaskCreate(can_rx_task, "can_rx_task", 1024*3, (void*)AF_INET, 5, NULL);
     xTaskCreate(can_tx_task, "can_tx_task", 1024*3, (void*)AF_INET, 5, NULL);
 
+#if HARDWARE_VER != OLIMEX_ESP32_EVB_REVK
     if(project_hardware_rev != WICAN_V210)
     {
 		if(config_server_get_sleep_config())
@@ -604,8 +637,9 @@ void app_main(void)
     {
     	sleep_mode_init(0, 13.1f);
     }
+#endif
 
-    gpio_set_level(PWR_LED_GPIO_NUM, 1);
+    hw_gpio_set_level(PWR_LED_GPIO_NUM, 1);
     
 
 	// xEventTask = xEventGroupCreate();
@@ -631,4 +665,3 @@ void app_main(void)
 	// debug_logs_init(dbg_net_ready);
 	// DEBUG_LOGI("INIT", "debug_logs initialized (UDP %s:%d) waiting for WiFi", DEBUG_LOGS_UDP_DEST_IP, DEBUG_LOGS_UDP_PORT);`
 }
-

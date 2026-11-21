@@ -20,8 +20,26 @@
 #define GW_CONFIG_h
 
 #include "esp_err.h"
+#include "driver/gpio.h"
 
-#if HARDWARE_VER == WICAN_PRO
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+#define FS_MOUNT_POINT              "/littlefs"
+#define TX_GPIO_NUM                 5
+#define RX_GPIO_NUM                 35
+// SIT1050T standby is tied low on the board; there is no control GPIO.
+#define CAN_STDBY_GPIO_NUM          (-1)
+#define CONNECTED_LED_GPIO_NUM      (-1)
+#define ACTIVE_LED_GPIO_NUM         (-1)
+#define BLE_EN_PIN_NUM              (-1)
+#define PWR_LED_GPIO_NUM            (-1)
+#define ETH_PHY_ADDR                0
+#define ETH_MDC_GPIO_NUM            23
+#define ETH_MDIO_GPIO_NUM           18
+#define ETH_PHY_RESET_GPIO_NUM      (-1)
+#define RELAY1_GPIO_NUM             32
+#define RELAY2_GPIO_NUM             33
+
+#elif HARDWARE_VER == WICAN_PRO
 #define FS_MOUNT_POINT              "/fatfs"
 #define TX_GPIO_NUM             	2
 #define RX_GPIO_NUM             	1
@@ -57,6 +75,21 @@
 #define CAN_STDBY_GPIO_NUM			6
 
 #endif
+
+// Existing interfaces store LED pins as uint8_t: absent -1 becomes 255.
+// Both representations are rejected before accessing or shifting a GPIO.
+static inline uint64_t hw_gpio_output_mask(int pin)
+{
+    return pin >= 0 && GPIO_IS_VALID_OUTPUT_GPIO(pin) ? (1ULL << pin) : 0;
+}
+
+static inline void hw_gpio_set_level(int pin, int level)
+{
+    if(hw_gpio_output_mask(pin))
+    {
+        gpio_set_level((gpio_num_t)pin, level);
+    }
+}
 
 esp_err_t hw_config_get_device_id(char *uid);
 

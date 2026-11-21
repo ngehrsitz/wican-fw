@@ -493,7 +493,7 @@
             <div class="section-title">Status</div>
             <table class="form-table">
                 <tr>
-                    <td>WiFi Mode:</td>
+                    <td id="network_mode_label">WiFi Mode:</td>
                     <td>
                         <div id="wifi_mode_current">AP&nbsp;</div>
                     </td>
@@ -505,13 +505,13 @@
                     </td>
                 </tr>
                 <tr>
-                    <td>WiFi Station:</td>
+                    <td id="network_status_label">WiFi Station:</td>
                     <td>
                         <div id="sta_status">Not Connected&nbsp;</div>
                     </td>
                 </tr>
                 <tr>
-                    <td>Station IP:</td>
+                    <td id="network_ip_label">Station IP:</td>
                     <td>
                         <div id="sta_ip">192.168.3.1&nbsp;</div>
                     </td>
@@ -2390,6 +2390,26 @@ function loadAutoTable(jsonData) {
 			document.getElementById("sta_status").innerHTML = obj.sta_status;
 			document.getElementById("ap_channel_status").innerHTML = obj.ap_ch;
 			document.getElementById("sta_ip").innerHTML = obj.sta_ip;
+            window.ethernetBoard = obj.network_type === "ethernet";
+            if(window.ethernetBoard) {
+                document.getElementById("network_mode_label").textContent = "Network:";
+                document.getElementById("network_status_label").textContent = "Ethernet:";
+                document.getElementById("network_ip_label").textContent = "Ethernet IP:";
+                document.getElementById("wifi_mode_current").textContent = "Ethernet (DHCP)";
+                document.getElementById("ap_channel_status").textContent = "N/A";
+                document.getElementById("sta_status").textContent = obj.network_status;
+                document.getElementById("sta_ip").textContent = obj.network_ip;
+                ["wifi_mode", "ap_ch_value", "ap_pass_value", "ssid_value", "pass_value",
+                 "sta_security", "ap_auto_disable", "ble_status", "ble_pass_value",
+                 "sleep_status", "batt_alert"].forEach(function(id) {
+                    var control = document.getElementById(id);
+                    if(control) control.disabled = true;
+                });
+                if(!window.ethernetMonitorInitialized) {
+                    document.getElementById("mon_datarate").selectedIndex = 4; // SLCAN S4 = 125K
+                    window.ethernetMonitorInitialized = true;
+                }
+            }
             document.getElementById("mdns").innerHTML = obj.mdns;
 			document.getElementById("can_bitrate_status").innerHTML = obj.can_datarate;
 			if(obj.can_mode == "normal") {
@@ -3127,6 +3147,11 @@ function loadAutoTable(jsonData) {
 	var cr = String.fromCharCode(13);
 
 	function mon_control() {
+        if(typeof window.ethernetBoard === "undefined") {
+            checkStatus();
+            alert("Wait for the network status, then start Monitor again.");
+            return;
+        }
 		var dr = document.getElementById("mon_datarate").selectedIndex;
 		var url = window.location.href;
 		var url2 = "http://192.168.31.72/";
@@ -3138,7 +3163,7 @@ function loadAutoTable(jsonData) {
 			ws = new WebSocket(ws_url);
 			setTimeout(bindEvents, 1000);
 			ws.addEventListener("open", (event) => {
-				var cmd = "C" + cr + "S" + dr + cr + "O" + cr;
+				var cmd = "C" + cr + "S" + dr + cr + (window.ethernetBoard ? "L" : "O") + cr;
 				console.log("onopen called");
 				ws.send(cmd);
 				window.mon_button_en(0);

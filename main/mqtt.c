@@ -63,6 +63,8 @@
 #include "expression_parser.h"
 #include "autopid.h"
 #include "dev_status.h"
+#include "hw_config.h"
+#include "network.h"
 
 #define TAG 		__func__
 // #define TAG 		"MQTT_CLIENT"
@@ -119,7 +121,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             }
 			
             esp_mqtt_client_subscribe(client, mqtt_cmd_topic, 0);
-			gpio_set_level(mqtt_led, 0);
+			hw_gpio_set_level(mqtt_led, 0);
 			esp_mqtt_client_publish(client, mqtt_status_topic, "{\"status\": \"online\"}", 0, 0, 1);
 
             xEventGroupSetBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
@@ -127,7 +129,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
 		case MQTT_EVENT_DISCONNECTED:
 			ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
 			xEventGroupClearBits(s_mqtt_event_group, MQTT_CONNECTED_BIT);
-			gpio_set_level(mqtt_led, 1);
+			hw_gpio_set_level(mqtt_led, 1);
 	//        esp_mqtt_client_stop(client);
 			break;
 
@@ -289,9 +291,13 @@ static void mqtt_parse_data(void *handler_args, esp_event_base_t base, int32_t e
         }
         else if(strcmp(cmd->valuestring, "get_vbatt") == 0)
         {
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+            sprintf(cmd_response, "{\"battery_voltage\":null}");
+#else
             float vbatt = 0;
             sleep_mode_get_voltage(&vbatt);
             sprintf(cmd_response, "{\"battery_voltage\": %f}", vbatt);
+#endif
             mqtt_publish(mqtt_rsp_topic, cmd_response, strlen(cmd_response), 0, 0);
         }
         else if(strcmp(cmd->valuestring, "get_autopid_data") == 0)
@@ -354,7 +360,7 @@ static void mqtt_task(void *pvParameters)
     strcpy(mqtt_topic, config_server_get_mqtt_rx_topic());
     sprintf(mqtt_elm327_topic, "wican/%s/elm327", device_id);
 
-	while(!wifi_network_is_connected())
+	while(!network_is_connected())
 	{
 		vTaskDelay(pdMS_TO_TICKS(1000));
 	}
@@ -656,4 +662,3 @@ void mqtt_init(char* id, uint8_t connected_led, QueueHandle_t *xtx_queue)
 
     xTaskCreate(mqtt_task, "mqtt_task", 1024*5, (void*)AF_INET, 5, NULL);
 }
-

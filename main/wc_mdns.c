@@ -23,6 +23,7 @@
 #include "esp_mac.h"
 #include "mdns.h"
 #include "esp_log.h"
+#include "hw_config.h"
 
 #define TAG         __func__
 static char mdns_host_name[24]; 
@@ -38,7 +39,11 @@ void wc_mdns_init(char *id, char* hv, char* fv)
     // Get MAC address
     uint8_t mac[6];
     char mac_str[18];
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+    esp_read_mac(mac, ESP_MAC_ETH);
+#else
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
+#endif
     sprintf(mac_str, "%02X:%02X:%02X:%02X:%02X:%02X", 
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     

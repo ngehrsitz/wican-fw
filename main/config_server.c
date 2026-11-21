@@ -74,6 +74,7 @@
 #include "autopid.h"
 #include "wc_mdns.h"
 #include "hw_config.h"
+#include "network.h"
 #include "ha_webhooks.h"
 
 #define WIFI_CONNECTED_BIT			BIT0
@@ -111,7 +112,14 @@ static char can_datarate_str[11][7] = {
 								"1000K",
 };
 
-const char device_config_default[] = "{\"wifi_mode\":\"AP\",\"ap_ch\":\"6\",\"webhook_en\":\"enable\",\"sta_ssid\":\"MeatPi\",\"sta_pass\":\"TomatoSauce\",\"sta_security\":\"wpa3\",\"can_datarate\":\"500K\",\"can_mode\":\"normal\",\"port_type\":\"tcp\",\"port\":\"3333\",\"ap_pass\":\"@meatpi#\",\"protocol\":\"slcan\",\"ble_pass\":\"123456\",\"ble_status\":\"disable\",\"sleep_status\":\"disable\",\"sleep_volt\":\"13.1\",\"wakeup_volt\":\"13.5\",\"batt_alert\":\"disable\",\"batt_alert_ssid\":\"MeatPi\",\"batt_alert_pass\":\"TomatoSauce\",\"batt_alert_volt\":\"11.0\",\"batt_alert_protocol\":\"mqtt\",\"batt_alert_url\":\"mqtt://mqtt.eclipseprojects.io\",\"batt_alert_port\":\"1883\",\"batt_alert_topic\":\"CAR1/voltage\",\"batt_mqtt_user\":\"meatpi\",\"batt_mqtt_pass\":\"meatpi\",\"batt_alert_time\":\"1\",\"mqtt_en\":\"disable\",\"mqtt_elm327_log\":\"disable\",\"mqtt_url\":\"mqtt://127.0.0.1\",\"mqtt_port\":\"1883\",\"mqtt_user\":\"meatpi\",\"mqtt_pass\":\"meatpi\",\"keep_alive\":\"30\",\"mqtt_tx_topic\":\"wican/%s/can/tx\",\"mqtt_rx_topic\":\"wican/%s/can/rx\",\"mqtt_status_topic\":\"wican/%s/can/status\"}";
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+#define DEFAULT_CAN_DATARATE "125K"
+#define DEFAULT_CAN_MODE "silent"
+#else
+#define DEFAULT_CAN_DATARATE "500K"
+#define DEFAULT_CAN_MODE "normal"
+#endif
+const char device_config_default[] = "{\"wifi_mode\":\"AP\",\"ap_ch\":\"6\",\"webhook_en\":\"enable\",\"sta_ssid\":\"MeatPi\",\"sta_pass\":\"TomatoSauce\",\"sta_security\":\"wpa3\",\"can_datarate\":\"" DEFAULT_CAN_DATARATE "\",\"can_mode\":\"" DEFAULT_CAN_MODE "\",\"port_type\":\"tcp\",\"port\":\"3333\",\"ap_pass\":\"@meatpi#\",\"protocol\":\"slcan\",\"ble_pass\":\"123456\",\"ble_status\":\"disable\",\"sleep_status\":\"disable\",\"sleep_volt\":\"13.1\",\"wakeup_volt\":\"13.5\",\"batt_alert\":\"disable\",\"batt_alert_ssid\":\"MeatPi\",\"batt_alert_pass\":\"TomatoSauce\",\"batt_alert_volt\":\"11.0\",\"batt_alert_protocol\":\"mqtt\",\"batt_alert_url\":\"mqtt://mqtt.eclipseprojects.io\",\"batt_alert_port\":\"1883\",\"batt_alert_topic\":\"CAR1/voltage\",\"batt_mqtt_user\":\"meatpi\",\"batt_mqtt_pass\":\"meatpi\",\"batt_alert_time\":\"1\",\"mqtt_en\":\"disable\",\"mqtt_elm327_log\":\"disable\",\"mqtt_url\":\"mqtt://127.0.0.1\",\"mqtt_port\":\"1883\",\"mqtt_user\":\"meatpi\",\"mqtt_pass\":\"meatpi\",\"keep_alive\":\"30\",\"mqtt_tx_topic\":\"wican/%s/can/tx\",\"mqtt_rx_topic\":\"wican/%s/can/rx\",\"mqtt_status_topic\":\"wican/%s/can/status\"}";
 static device_config_t device_config;
 TimerHandle_t xrestartTimer;
 
@@ -851,6 +859,13 @@ char *config_server_get_status_json(bool remove_sensitive_info)
 
 	cJSON_AddStringToObject(root, "sta_status", (wifi_network_is_connected() ? "Connected" : "Not Connected"));
 	cJSON_AddBoolToObject(root, "sta_connected", wifi_network_is_connected());
+	if(network_is_ethernet())
+	{
+		network_get_ip(ip_str, sizeof(ip_str));
+		cJSON_AddStringToObject(root, "network_type", "ethernet");
+		cJSON_AddStringToObject(root, "network_status", network_is_connected() ? "Connected" : "Not Connected");
+		cJSON_AddStringToObject(root, "network_ip", ip_str);
+	}
 	cJSON_AddStringToObject(root, "mdns", wc_mdns_get_hostname());
 	cJSON_AddStringToObject(root, "ble_status", device_config.ble_status);
 	cJSON_AddStringToObject(root, "can_datarate", can_datarate_str[can_get_bitrate()]);
@@ -988,7 +1003,7 @@ static esp_err_t ws_handler(httpd_req_t *req)
         rsp_arg.fd = httpd_req_to_sockfd(req);
 //        tcp_server_suspend();
 //        vTaskResume(xwebsocket_handle);
-        gpio_set_level(ws_led, 0);
+        hw_gpio_set_level(ws_led, 0);
         xEventGroupSetBits( xServerEventGroup, WS_CONNECTED_BIT );
         return ESP_OK;
     }
@@ -2344,7 +2359,7 @@ static void websocket_task(void *pvParameters)
 	    if (ret != ESP_OK)
 	    {
 //	    	tcp_server_resume();
-	    	gpio_set_level(ws_led, 1);
+			hw_gpio_set_level(ws_led, 1);
 	    	xEventGroupClearBits( xServerEventGroup, WS_CONNECTED_BIT );
 //	    	vTaskSuspend( NULL );
 
@@ -2383,6 +2398,9 @@ void config_server_start(QueueHandle_t *xTXp_Queue, QueueHandle_t *xRXp_Queue, u
 }
 int8_t config_server_get_ble_config(void)
 {
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+	return 0;
+#else
 	if(strcmp(device_config.ble_status, "enable") == 0)
 	{
 		return 1;
@@ -2392,10 +2410,14 @@ int8_t config_server_get_ble_config(void)
 		return 0;
 	}
 	return -1;
+#endif
 }
 
 int8_t config_server_get_sleep_config(void)
 {
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+	return 0;
+#else
 	if(strcmp(device_config.sleep_status, "enable") == 0)
 	{
 		return 1;
@@ -2405,6 +2427,7 @@ int8_t config_server_get_sleep_config(void)
 		return 0;
 	}
 	return -1;
+#endif
 }
 
 int8_t config_server_get_sleep_volt(float *sleep_volt)
@@ -2738,4 +2761,3 @@ void config_server_set_ble_config(uint8_t b)
 	free((void *)resp_str);
     cJSON_Delete(root);
 }
-

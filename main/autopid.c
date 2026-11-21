@@ -45,6 +45,7 @@
 #include "debug_logs.h"
 #include "ha_webhooks.h"
 #include "wifi_network.h"
+#include "network.h"
 #include "sleep_mode.h"
 #include <time.h>
 #include <ctype.h>
@@ -2287,7 +2288,7 @@ static void autopid_webhook_task(void *pvParameters)
     for (;;)
     {
         // Wait for STA connectivity (do NOT block forever on dev_status bits; wifi_network doesn't set them)
-        if (!wifi_network_is_connected())
+        if (!network_is_connected())
         {
             uint64_t now = (uint64_t)(esp_timer_get_time() / 1000000ULL);
             if ((now - last_wifi_status_time) >= 10)
@@ -2313,7 +2314,7 @@ static void autopid_webhook_task(void *pvParameters)
         }
 
         // Only post in AutoPID protocol mode
-        if (config_server_protocol() == AUTO_PID && wifi_network_is_connected())
+        if (config_server_protocol() == AUTO_PID && network_is_connected())
         {
             bool send_full_data = true;
             if (all_pids && all_pids->webhook_data_mode)

@@ -18,6 +18,22 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "hw_config.h"
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include <stdbool.h>
+#include "ble.h"
+
+// This profile has no BLE transport. Do not initialize the controller or Wi-Fi.
+void ble_init(QueueHandle_t *tx, QueueHandle_t *rx, uint8_t led, int passkey, uint8_t *uid) {}
+bool ble_connected(void) { return false; }
+void ble_send(uint8_t *buf, uint8_t len) {}
+bool ble_tx_ready(void) { return false; }
+void ble_disable(void) {}
+void ble_enable(void) {}
+#else
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include  "freertos/queue.h"
@@ -564,7 +580,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event,
     	    spp_gatts_if = gatts_if;
     	    is_connected = true;
     	    xEventGroupSetBits(s_ble_event_group, BLE_CONNECTED_BIT);
-    	    gpio_set_level(conn_led, 0);
+            hw_gpio_set_level(conn_led, 0);
             /* start security connect with peer device when receive the connect event sent by the master */
             esp_ble_set_encryption(param->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
             break;
@@ -573,7 +589,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event,
 //            wifi_network_restart();
 //        	config_server_restart();
             is_connected = false;
-            gpio_set_level(conn_led, 1);
+            hw_gpio_set_level(conn_led, 1);
             /* start advertising again when missing the connect */
             esp_ble_gap_start_advertising(&heart_rate_adv_params);
             break;
@@ -936,3 +952,4 @@ void ble_enable(void)
 	ble_init(0,0,0,0,0);
 //	esp_bluedroid_enable();
 }
+#endif // HARDWARE_VER == OLIMEX_ESP32_EVB_REVK

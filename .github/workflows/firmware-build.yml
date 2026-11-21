@@ -1,0 +1,50 @@
+name: Build Olimex ESP32-EVB Rev K firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - olimex-esp32-evb-revk
+    paths:
+      - 'CMakeLists.txt'
+      - 'main/**'
+      - 'components/**'
+      - 'boards/olimex-esp32-evb-revk/**'
+      - 'dependencies.lock'
+      - 'wican_partitions_table.csv'
+      - 'tools/ci/build-firmware.sh'
+      - '.github/workflows/firmware-build.yml'
+      - '.gitattributes'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      # Official espressif/idf:v5.5.2, Linux amd64.
+      image: espressif/idf@sha256:88a65f412e730fdbe134cd7427dd840eb1a6923479499c9c233699f804a3096b
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build and merge factory image
+        run: bash tools/ci/build-firmware.sh
+
+      - name: Upload firmware images
+        uses: actions/upload-artifact@v7
+        with:
+          name: olimex-esp32-evb-revk-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            build/olimex-esp32-evb-revk/factory.bin
+            build/olimex-esp32-evb-revk/app-ota.bin
+            build/olimex-esp32-evb-revk/flasher_args.json

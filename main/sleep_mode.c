@@ -58,6 +58,7 @@
 #include "ver.h"
 #include "math.h"
 #include "dev_status.h"
+#include "hw_config.h"
 
 #define TAG 			  __func__
 
@@ -207,7 +208,7 @@ static void calibration_init(void)
             .atten = ADC_ATTEN,
             .bitwidth = ADC_BIT_WIDTH,
         };
-        ret = adc_cali_create_scheme_line_fitting(&cali_config, &cali_handle);
+        ret = adc_cali_create_scheme_line_fitting(&cali_config, &adc1_cali_chan0_handle);
         if (ret == ESP_OK) 
 		{
             calibrated = true;
@@ -504,6 +505,10 @@ static void adc_task(void *pvParameters)
 
 int8_t sleep_mode_get_voltage(float *val)
 {
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+	(void)val;
+	return -1;
+#else
 	if(voltage_queue != NULL)
 	{
 		if(xQueuePeek( voltage_queue, val, 0 ))
@@ -513,10 +518,16 @@ int8_t sleep_mode_get_voltage(float *val)
 		else return -1;
 	}
 	return -1;
+#endif
 }
 
 int8_t sleep_mode_init(uint8_t enable, float sleep_volt)
 {
+#if HARDWARE_VER == OLIMEX_ESP32_EVB_REVK
+	(void)enable;
+	(void)sleep_volt;
+	return 0;
+#else
 	enable_sleep = enable;
 	sleep_voltage = sleep_volt;
 	ESP_LOGW(TAG, "sleep_volt: %2.2f", sleep_volt);
@@ -525,4 +536,5 @@ int8_t sleep_mode_init(uint8_t enable, float sleep_volt)
 	xTaskCreate(adc_task, "adc_task", 4096, (void*)AF_INET, 5, NULL);
 
 	return 1;
+#endif
 }
