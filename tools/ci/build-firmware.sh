@@ -34,6 +34,9 @@ import sys
 from pathlib import Path
 
 build = Path(sys.argv[1])
+if "CONFIG_FREERTOS_HZ=1000" not in (build / "sdkconfig").read_text().splitlines():
+    raise SystemExit("Expected upstream WiCAN's 1000 Hz FreeRTOS tick rate")
+print("Verified FreeRTOS tick rate: 1000 Hz")
 args = json.loads((build / "flasher_args.json").read_text())
 if args["extra_esptool_args"]["chip"] != "esp32":
     raise SystemExit("Expected an ESP32 build")
